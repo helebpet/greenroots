@@ -1,130 +1,195 @@
-/* Green Roots — small progressive enhancements */
+/* Green Roots: mobile nav, back to top, shop cart, motion */
 (function () {
   "use strict";
 
-  /* --- Sticky header state ------------------------------------------------ */
-  var header = document.querySelector(".site-header");
-  if (header && !header.classList.contains("site-header--solid")) {
-    var onScroll = function () {
-      header.classList.toggle("is-stuck", window.scrollY > 40);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-  }
+  window.grMotion = true; // tells the <head> failsafe that JS is running
+
+  var root = document.documentElement;
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* --- Mobile nav --------------------------------------------------------- */
   var toggle = document.querySelector(".nav-toggle");
-  var nav = document.querySelector(".site-nav");
+  var nav = document.getElementById("site-nav");
   if (toggle && nav) {
     toggle.addEventListener("click", function () {
       var open = nav.classList.toggle("is-open");
       toggle.setAttribute("aria-expanded", String(open));
-      document.body.style.overflow = open ? "hidden" : "";
-    });
-
-    nav.addEventListener("click", function (e) {
-      if (e.target.tagName === "A") {
-        nav.classList.remove("is-open");
-        toggle.setAttribute("aria-expanded", "false");
-        document.body.style.overflow = "";
-      }
     });
   }
 
-  /* --- Sticky ticket bar -------------------------------------------------- */
-  var bar = document.getElementById("ticket-bar");
-  var foot = document.querySelector(".site-footer");
-  if (bar) {
-    bar.hidden = false;
-    var showBar = function () {
-      var pastHero = window.scrollY > window.innerHeight * 0.85;
-      var atFooter = foot && foot.getBoundingClientRect().top < window.innerHeight;
-      bar.classList.toggle("is-visible", pastHero && !atFooter);
-    };
-    showBar();
-    window.addEventListener("scroll", showBar, { passive: true });
-    window.addEventListener("resize", showBar);
-  }
-
-  /* --- Drag-to-scroll on the program rail --------------------------------- */
-  document.querySelectorAll(".rail").forEach(function (rail) {
-    var down = false;
-    var startX = 0;
-    var startLeft = 0;
-    var moved = 0;
-
-    rail.addEventListener("pointerdown", function (e) {
-      if (e.pointerType === "touch") return; // native touch scrolling is better
-      down = true;
-      moved = 0;
-      startX = e.clientX;
-      startLeft = rail.scrollLeft;
-      rail.setPointerCapture(e.pointerId);
+  /* --- Back to top -------------------------------------------------------- */
+  document.querySelectorAll(".to-top").forEach(function (button) {
+    button.addEventListener("click", function () {
+      window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+      var logo = document.querySelector(".logo");
+      if (logo) logo.focus({ preventScroll: true });
     });
-
-    rail.addEventListener("pointermove", function (e) {
-      if (!down) return;
-      var dx = e.clientX - startX;
-      moved = Math.abs(dx);
-      rail.scrollLeft = startLeft - dx;
-    });
-
-    ["pointerup", "pointercancel"].forEach(function (evt) {
-      rail.addEventListener(evt, function () {
-        down = false;
-      });
-    });
-
-    // Swallow the click that ends a drag so cards don't fire links.
-    rail.addEventListener(
-      "click",
-      function (e) {
-        if (moved > 6) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      },
-      true
-    );
-
-    // Vertical wheel becomes horizontal travel while the pointer is over it.
-    rail.addEventListener(
-      "wheel",
-      function (e) {
-        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-        var max = rail.scrollWidth - rail.clientWidth;
-        var next = rail.scrollLeft + e.deltaY;
-        if (next <= 0 || next >= max) return; // let the page scroll at the ends
-        e.preventDefault();
-        rail.scrollLeft = next;
-      },
-      { passive: false }
-    );
   });
 
-  /* --- Scroll reveal ------------------------------------------------------ */
-  var targets = document.querySelectorAll("[data-reveal]");
-  if (!("IntersectionObserver" in window)) {
+  /* Restart a one-shot CSS animation even if it is mid-play. */
+  function replay(el, className) {
+    if (!el) return;
+    el.classList.remove(className);
+    void el.offsetWidth; // force reflow so the animation starts again
+    el.classList.add(className);
+  }
+
+  /* --- Cart count --------------------------------------------------------- */
+  // Front end only: counts what was added and remembers it per browser.
+  var KEY = "greenroots-cart";
+  var count = document.querySelector(".cart__count");
+  var cart = document.querySelector(".cart");
+  var status = document.getElementById("cart-status");
+
+  function read() {
+    try {
+      return JSON.parse(localStorage.getItem(KEY)) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function write(items) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(items));
+    } catch (e) {
+      /* storage blocked: the count still updates for this page view */
+    }
+  }
+
+  var items = read();
+
+  function render(added) {
+    if (!count) return;
+    count.textContent = items.length;
+    count.dataset.count = items.length;
+    if (status && added) {
+      status.textContent =
+        added + " added. Cart has " + items.length + " item" + (items.length === 1 ? "" : "s") + ".";
+    }
+  }
+
+  render();
+
+  document.querySelectorAll(".add").forEach(function (button) {
+    button.addEventListener("click", function () {
+      items.push(button.dataset.item);
+      write(items);
+      render(button.dataset.item);
+      // squash the plus, then the cart hops and the badge pops (follow-through)
+      replay(button, "is-popped");
+      replay(cart, "is-bump");
+      replay(count, "is-pop");
+    });
+  });
+
+  /* --- Reveal on scroll --------------------------------------------------- */
+  // Keep this list in step with section 13 of css/style.css.
+  var REVEAL = [
+    ".hero__card",
+    ".body-copy > *",
+    ".transparency__head > :not(.bot)",
+    ".alloc",
+    ".voice",
+    ".gallery > img",
+    ".section__head",
+    ".sponsor-tier",
+    ".closing .shell > *",
+    ".quote > *",
+    ".band__text",
+    ".band__title",
+    ".band--leaves .shell > *",
+    ".link",
+    ".host",
+    ".products > .product",
+    ".contact__card",
+    ".contact__media",
+    ".split__media"
+  ].join(",");
+
+  var STAGGER = 90;      // ms between siblings arriving together
+  var BLOOM_LEAD = 180;  // prints wait for the text beside them
+  var BLOOM_STAGGER = 140;
+
+  var targets = Array.prototype.slice.call(document.querySelectorAll(REVEAL + ", .bot, .site-footer__sun"));
+
+  if (root.classList.contains("motion-failsafe")) {
+    // JS arrived after the failsafe already showed everything; don't replay
+  } else if (reduceMotion || !("IntersectionObserver" in window)) {
     targets.forEach(function (el) {
-      el.classList.add("is-visible");
+      el.classList.add("is-in");
     });
-    return;
+  } else {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        // everything entering in the same frame arrives in reading order
+        var arriving = entries
+          .filter(function (entry) { return entry.isIntersecting; })
+          .map(function (entry) { return entry.target; })
+          .sort(function (a, b) {
+            return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+          });
+
+        var text = 0;
+        var prints = 0;
+        arriving.forEach(function (el) {
+          var delay = el.classList.contains("bot")
+            ? BLOOM_LEAD + text * STAGGER * 0.5 + prints++ * BLOOM_STAGGER
+            : text++ * STAGGER;
+          el.style.setProperty("--d", Math.round(delay) + "ms");
+          el.classList.add("is-in");
+          observer.unobserve(el);
+        });
+      },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.12 }
+    );
+
+    targets.forEach(function (el) {
+      observer.observe(el);
+    });
   }
 
-  var observer = new IntersectionObserver(
-    function (entries) {
-      entries.forEach(function (entry) {
-        if (!entry.isIntersecting) return;
-        var delay = entry.target.dataset.revealDelay || 0;
-        entry.target.style.transitionDelay = delay + "ms";
-        entry.target.classList.add("is-visible");
-        observer.unobserve(entry.target);
+  /* --- Parallax on the botanical prints ----------------------------------- */
+  // Layers at different depths drift at different rates. translate only.
+  if (!reduceMotion) {
+    var DEPTH = {
+      "bot--hero-cherries": 0.14,
+      "bot--hero-lemon": 0.09,
+      "bot--hero-peach": 0.05
+    };
+    var prints = Array.prototype.slice.call(document.querySelectorAll(".bot")).map(function (el) {
+      var depth = 0.07;
+      Object.keys(DEPTH).forEach(function (cls) {
+        if (el.classList.contains(cls)) depth = DEPTH[cls];
       });
-    },
-    { rootMargin: "0px 0px -12% 0px", threshold: 0.1 }
-  );
+      return { el: el, depth: depth };
+    });
 
-  targets.forEach(function (el) {
-    observer.observe(el);
-  });
+    var ticking = false;
+
+    function drift() {
+      ticking = false;
+      var mid = window.innerHeight / 2;
+      prints.forEach(function (p) {
+        var rect = p.el.getBoundingClientRect();
+        if (rect.bottom < -200 || rect.top > window.innerHeight + 200) return;
+        var offset = rect.top + rect.height / 2 - mid;
+        var y = Math.max(-48, Math.min(48, -offset * p.depth));
+        p.el.style.translate = "0 " + y.toFixed(1) + "px";
+      });
+    }
+
+    function requestDrift() {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(drift);
+      }
+    }
+
+    if (prints.length) {
+      drift();
+      window.addEventListener("scroll", requestDrift, { passive: true });
+      window.addEventListener("resize", requestDrift);
+    }
+  }
 })();
